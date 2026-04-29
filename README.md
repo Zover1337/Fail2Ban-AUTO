@@ -16,7 +16,7 @@
 Скопируйте и выполните в терминале вашего сервера (от root или через sudo):
 
 ```
-sudo bash -c "$(curl -fsSL [https://raw.githubusercontent.com/Zover1337/Fail2Ban-AUTO/refs/heads/main/fail2ban-install.sh](https://raw.githubusercontent.com/Zover1337/Fail2Ban-AUTO/refs/heads/main/fail2ban-install.sh))"
+bash <(curl -s https://raw.githubusercontent.com/Zover1337/Fail2Ban-AUTO/refs/heads/main/fail2ban-install.sh)
 ```
 
 ### Что делает скрипт:
