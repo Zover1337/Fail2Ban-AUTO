@@ -6,7 +6,7 @@
 ![OS](https://img.shields.io/badge/OS-Linux-blue)
 ![Debian/Ubuntu](https://img.shields.io/badge/Debian/Ubuntu-ready-green)
 ![CentOS/RHEL](https://img.shields.io/badge/CentOS%2FRHEL-ready-green)
-![License](https://img.shields.io/badge/License-MIT-yellow)
+![License](https://img.shields.io/badge/License-GPLv3-blue.svg)
 ![Version](https://img.shields.io/badge/version-1.0-orange)
 [![ShellCheck](https://img.shields.io/badge/ShellCheck-passed-brightgreen)](https://www.shellcheck.net/)
 
@@ -21,3 +21,185 @@
 
 ```bash
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/Zover1337/Fail2Ban-AUTO/refs/heads/main/fail2ban-install.sh)"
+```
+
+Скрипт:
+
+    сам определит вашу ОС (Debian/Ubuntu, CentOS/RHEL);
+
+    установит fail2ban через системный пакетный менеджер;
+
+    создаст правильную конфигурацию с backend = systemd (решает проблему отсутствующего /var/log/auth.log);
+
+    запустит сервис и добавит в автозагрузку;
+
+    покажет статус SSH jail.
+
+После выполнения вы увидите что-то вроде:
+text
+
+=== Установка и настройка fail2ban (3 попытки SSH) ===
+Установка fail2ban через apt...
+Создание конфигурации /etc/fail2ban/jail.local...
+Запуск fail2ban...
+Проверка статуса SSH jail:
+Status for the jail: sshd
+|- Filter
+|  |- Currently failed: 0
+|  |- Total failed: 0
+|  `- File list:    (systemd)
+`- Actions
+   |- Currently banned: 0
+   |- Total banned: 0
+   `- Banned IP list:
+Состояние сервиса fail2ban: Сервис активен
+Готово! После 3 неудачных SSH-попыток IP будет забанен на 10 минут.
+
+📦 Что именно настраивается?
+
+Скрипт создаёт файл /etc/fail2ban/jail.local с таким содержанием:
+ini
+
+[DEFAULT]
+bantime = 600
+findtime = 600
+maxretry = 3
+
+[sshd]
+enabled = true
+port = ssh
+backend = systemd
+
+Пояснение каждого параметра:
+Параметр	Значение	Что означает
+maxretry	3	Блокировать после 3 неудачных попыток.
+findtime	600 секунд (10 минут)	«Окно наблюдения» — считаем попытки за последние 10 минут.
+bantime	600 секунд	IP блокируется на 10 минут.
+backend = systemd	-	Читает логи SSH напрямую из systemd (не требуется файл /var/log/auth.log). Это самое надёжное решение для современных Ubuntu/Debian.
+
+Только секция [sshd] включена — значит fail2ban не трогает веб-сервер, почту, FTP или другие службы.
+✅ Проверка работы после установки
+1. Убедиться, что jail активен
+bash
+
+sudo fail2ban-client status sshd
+
+Если видите Status for the jail: sshd и строки с фильтрами — всё ок.
+2. Посмотреть список забаненных IP
+bash
+
+sudo fail2ban-client banned
+
+Если никого не заблокировали, будет пустой список.
+3. Посмотреть реальные блокировки в iptables
+bash
+
+sudo iptables -L -n | grep -A5 'f2b-sshd'
+
+4. Проверить логи fail2ban
+bash
+
+sudo tail -f /var/log/fail2ban.log
+
+При попытке брутфорса увидите записи вида:
+NOTICE [sshd] Ban 192.168.1.100
+⚠️ Типичные проблемы и их решение
+Проблема 1: Ошибка при установке из-за сторонних репозиториев
+
+Пример ошибки:
+text
+
+E: The repository 'https://packagecloud.io/ookla/speedtest-cli/ubuntu noble Release' does not have a Release file.
+
+Решение:
+Удалите проблемный репозиторий и выполните apt update:
+bash
+
+sudo rm -f /etc/apt/sources.list.d/ookla_speedtest-cli.list
+sudo apt update
+
+После этого скрипт отработает нормально. Или просто запустите скрипт повторно — он сам вызовет apt update.
+Проблема 2: fail2ban не видит логов SSH (старая ошибка)
+
+Симптом:
+sudo fail2ban-client status sshd выдаёт ERROR NOK: ('sshd',), а в логах Have not found any log file for sshd jail.
+
+Решение:
+Скрипт уже использует backend = systemd, поэтому этой ошибки не будет. Если вы правили конфиг вручную — верните backend = systemd.
+Проблема 3: fail2ban не запускается
+
+Решение:
+Посмотрите ошибки:
+bash
+
+sudo systemctl status fail2ban
+sudo journalctl -u fail2ban -n 50
+
+Чаще всего проблема в синтаксисе jail.local. Проверьте:
+bash
+
+sudo fail2ban-client -d
+
+Если найдёт ошибку — исправьте и перезапустите:
+bash
+
+sudo systemctl restart fail2ban
+
+🔧 Как изменить настройки (например, увеличить время бана)
+
+Откройте файл конфигурации:
+bash
+
+sudo nano /etc/fail2ban/jail.local
+
+Измените, скажем, bantime на 3600 (1 час) или на -1 (навсегда):
+ini
+
+[DEFAULT]
+bantime = 3600
+
+Сохраните (Ctrl+O, Enter, Ctrl+X) и перезапустите fail2ban:
+bash
+
+sudo systemctl restart fail2ban
+
+Проверьте, что изменения применились:
+bash
+
+sudo fail2ban-client get sshd bantime
+
+Если ответ 3600 — всё верно.
+📌 Если у вас нестандартный порт SSH
+
+Допустим, SSH слушает на порту 2222. Тогда нужно указать это в jail.local:
+ini
+
+[sshd]
+enabled = true
+port = 2222
+backend = systemd
+
+После этого перезапустите fail2ban.
+🧪 Тестирование защиты (аккуратно!)
+
+Чтобы убедиться, что fail2ban банит, выполните с другого компьютера 3 неверных логина:
+bash
+
+ssh -o BatchMode=yes root@ваш_сервер
+
+После третьей попытки ваш IP будет забанен на 10 минут. Убедиться можно командой на сервере:
+bash
+
+sudo fail2ban-client status sshd
+
+В строке Currently banned будет 1. Чтобы разбанить себя раньше времени:
+bash
+
+sudo fail2ban-client unban <ваш_IP>
+
+📄 Лицензия
+
+GPL-3.0 — вы можете свободно использовать, изменять и распространять этот скрипт при условии, что производные работы также будут опубликованы под GPL-3.0. Полный текст лицензии: https://www.gnu.org/licenses/gpl-3.0.html
+🙋 Вопросы и поддержка
+
+Если что-то пошло не так — просто скопируйте вывод ошибки в чат с ассистентом, и он поможет (ведь этот README сгенерирован AI, и AI же вас поддерживает 😉).
